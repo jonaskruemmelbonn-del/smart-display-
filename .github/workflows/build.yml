@@ -54,8 +54,11 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Android SDK einrichten
-        uses: android-actions/setup-android@v3
+      - name: Android SDK pruefen (auf dem Runner schon vorinstalliert)
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" || true
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Gradle einrichten
         uses: gradle/actions/setup-gradle@v4
