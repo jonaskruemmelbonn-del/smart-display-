@@ -1,0 +1,72 @@
+name: APK bauen
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Projekt holen
+        uses: actions/checkout@v4
+
+      - name: Google Sans Flex laden
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p app/src/main/assets/fonts
+          TARGET=app/src/main/assets/fonts/GoogleSansFlex.ttf
+          if ls app/src/main/assets/fonts/*.ttf >/dev/null 2>&1; then
+            echo "Schrift liegt schon im Projekt, nichts zu tun."
+            exit 0
+          fi
+          URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/google/fonts/contents/ofl/googlesansflex \
+            | jq -r '[.[] | select(.name | endswith(".ttf")) | select(.name | test("Italic") | not)][0].download_url // empty')
+          if [ -n "$URL" ]; then
+            echo "Lade Schrift von: $URL"
+            curl -sSL "$URL" -o "$TARGET" || true
+          else
+            echo "Nicht im google/fonts-Repository gefunden, versuche den Google-Fonts-Download."
+            curl -sSL -o font.zip "https://fonts.google.com/download?family=Google%20Sans%20Flex" || true
+            if [ -s font.zip ]; then
+              unzip -o font.zip -d fontzip || true
+              F=$(find fontzip -name '*.ttf' ! -iname '*italic*' | head -n 1)
+              if [ -n "$F" ]; then cp "$F" "$TARGET"; fi
+            fi
+          fi
+          # Zu kleine Dateien sind Fehlerseiten und keine Schrift.
+          if [ -f "$TARGET" ] && [ "$(stat -c %s "$TARGET")" -lt 100000 ]; then
+            echo "Heruntergeladene Datei ist keine gueltige Schrift, wird entfernt."
+            rm -f "$TARGET"
+          fi
+          ls -la app/src/main/assets/fonts
+
+      - name: Java einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Android SDK einrichten
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle einrichten
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: APK bauen
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: APK bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-display-apk
+          path: app/build/outputs/apk/release/*.apk
